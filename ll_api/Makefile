@@ -6,7 +6,7 @@
 TOP=..
 
 # Assume each source files makes an object file
-OBJECTS=kmain.o ll_api_test.o xosera_ll.o
+OBJECTS=vram_alloc.o kmain.o ll_api_test.o xosera_ll.o 
 EXTRA_CLEAN=atari_logo.raw atari_logo.pal.raw test.raw test.pal.raw
 EXTRA_ALL_TARGETS=images
 

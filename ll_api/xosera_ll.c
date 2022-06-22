@@ -1,21 +1,12 @@
 #include <stdio.h>
 #include "xosera_ll.h"
+#include "vram_alloc.h"
 
 #define GFX_BUFFERS_MAX 32
 
 GlobalState gState;
 LayerState  gLayers[2];
 GfxBufferState gGfxBuffers[GFX_BUFFERS_MAX];
-
-typedef struct free_mem {
-    uint16_t start;
-    uint32_t len;
-} free_mem_t;
-
-#define VRAM_SEGMENTS   16
-#define VRAM_MAX_SIZE   (64 * 1024)
-
-free_mem_t vram_free_list[VRAM_SEGMENTS];
 
 /**
  * configure the graphics subsystem.  Must be called before any other APIs. 
@@ -31,13 +22,7 @@ int initGraphics(GlobalMode gm)
     gLayers[0].mEnabled = 0;
     gLayers[1].mEnabled = 0;
 
-    // init a list of one node with all of VRAM in it.  This shows all mem as free
-    for ( i = 0; i < VRAM_SEGMENTS; i++ )
-    {
-        vram_free_list[i].len = 0;
-    }
-    vram_free_list[0].start = 0;
-    vram_free_list[0].len = VRAM_MAX_SIZE;
+    init_vram();
 
     for ( i = 0; i < GFX_BUFFERS_MAX; i++)
     {
@@ -64,32 +49,6 @@ int initGraphics(GlobalMode gm)
     return XERR_NoError;
 }
 
-static int alloc_vram(uint16_t size, uint16_t *ptr)
-{
-    int i;
-
-    for ( i = 0; i < VRAM_SEGMENTS; i++ )
-    {
-        if ( vram_free_list[i].len >= size )
-        {
-            *ptr = vram_free_list[i].start;
-            vram_free_list[i].len -= size;
-            vram_free_list[i].start += size;
-            return XERR_NoError;
-        }
-    }
-
-    return XERR_NoMemory;
-}
-
-static int free_vram(uint16_t ptr, uint16_t size)
-{
-    int temp = ptr;
-    temp = size;
-    temp = XERR_NoError;
-    return temp;
-}
-
 static LayerState *get_layer(Playfield pf)
 {
     switch (pf)
@@ -106,7 +65,6 @@ static LayerState *get_layer(Playfield pf)
 
 GfxBufferState *allocBitmapBuffer(RectSize size, ColorMode colors)
 {
-    int line_words = 0;
     uint16_t reg_bpp = 0;
     GfxBufferState *gfx_buf = NULL;
     int i;
@@ -125,18 +83,6 @@ GfxBufferState *allocBitmapBuffer(RectSize size, ColorMode colors)
     {
         return NULL;
     }
-    
-    uint16_t base_offset;
-    if ( alloc_vram(line_words * size.height, &base_offset) != XERR_NoError )
-    {
-        gGfxBuffers[i].mAllocated = false;
-        return NULL;
-    }
-
-    gfx_buf->mBaseAddress = base_offset;
-    gfx_buf->mColorMode = colors;
-    gfx_buf->mSize.width = size.width;
-    gfx_buf->mSize.height = size.height;
 
     switch(colors)
     {
@@ -151,6 +97,17 @@ GfxBufferState *allocBitmapBuffer(RectSize size, ColorMode colors)
             break;
     }
 
+    uint16_t base_offset;
+    if ( alloc_vram(gfx_buf->mLineWords * size.height, &base_offset) != XERR_NoError )
+    {
+        gGfxBuffers[i].mAllocated = false;
+        return NULL;
+    }
+
+    gfx_buf->mBaseAddress = base_offset;
+    gfx_buf->mColorMode = colors;
+    gfx_buf->mSize.width = size.width;
+    gfx_buf->mSize.height = size.height;
     gfx_buf->mBufferSize = gfx_buf->mLineWords * size.height;
 
     return gfx_buf;    
@@ -238,6 +195,12 @@ int allocBitmapPlayfield(Playfield pf, RectSize size, ColorMode colors)
 int allocTiledPlayfield(Playfield pf, RectSize size, ColorMode colors)
 {
     return XERR_NoError;
+}
+
+GfxBufferState *getPlayfieldGfxBuffer(Playfield pf)
+{
+    LayerState *layer = get_layer(pf);
+    return layer->mGfxState;
 }
 
 /**

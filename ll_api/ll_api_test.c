@@ -40,7 +40,8 @@ static void dprint(const char * str)
 }
 
 static char dprint_buff[4096];
-static void dprintf(const char * fmt, ...)
+
+extern void dprintf(const char * fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
@@ -138,6 +139,11 @@ void run_test()
     allocBitmapPlayfield(PF_A, size, COLOR_8BPP);
     allocBitmapPlayfield(PF_B, size, COLOR_4BPP);
 
+    dprintf("playfield A %p\n", getPlayfieldGfxBuffer(PF_A));
+    dprintf("playfield B %p\n", getPlayfieldGfxBuffer(PF_B));
+    dprintf("playfield A base addr %d\n", getPlayfieldGfxBuffer(PF_A)->mBaseAddress);
+    dprintf("playfield B base addr %d\n", getPlayfieldGfxBuffer(PF_B)->mBaseAddress);
+
     if (!load_sd_colors(PF_A, "/test.pal.raw"))
     {
         dprintf("Failed to load test.pal.raw\n");
@@ -151,7 +157,6 @@ void run_test()
 
     showPlayfield(PF_A);
     delay(100000);
-    showPlayfield(PF_B);
 
     uint16_t ctrl = xreg_getw(PA_GFX_CTRL);
     dprintf("Showing Playfield A %x\n", ctrl);
@@ -169,7 +174,7 @@ void run_test()
 
     ctrl = xreg_getw(PB_GFX_CTRL);
     dprintf("Showing B before Playfield %x\n", ctrl);
-
+    showPlayfield(PF_B);
     ctrl = xreg_getw(PB_GFX_CTRL);
     dprintf("Showing Playfield B %x\n", ctrl);
 
