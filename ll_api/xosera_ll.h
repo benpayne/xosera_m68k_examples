@@ -54,17 +54,25 @@ typedef struct GlobalStateStruct {
     RectSize   mDisplaySize;
 } GlobalState;
 
-typedef struct LayerStateStruct {
+typedef struct GfxBufferStateStruct {
     uint16_t  mBaseAddress;
     uint16_t  mBufferSize;
-    uint8_t   mColorBase;
+    uint16_t  mLineWords;
     ColorMode mColorMode;
     RectSize  mSize;
+    bool      mAllocated;
+} GfxBufferState;
+
+typedef struct LayerStateStruct {
+    GfxBufferState *mGfxState;
+    uint8_t   mColorBase;
     PixelRepeat mHorizontalRepeat;
     PixelRepeat mVerticalRepeat;
     bool        mEnabled;
     bool        mTiled;
+    uint16_t    mCtrlReg;
 } LayerState;
+
 
 /**
  * configure the graphics subsystem.  Must be called before any other APIs. 
@@ -74,7 +82,14 @@ typedef struct LayerStateStruct {
 int initGraphics(GlobalMode gm);
 
 /**
- * allocate the VRAM for the playfield and configure that playfield to display.
+ * allocate a bitmap buffer of a specified size.  This buffer can be used as a 
+ *  source or dest for blits.  
+ */
+GfxBufferState *allocBitmapBuffer(RectSize size, ColorMode colors);
+
+/**
+ * allocate the VRAM for the playfield and configure that playfield to display.  Playfields will
+ * start as hidden and you must call showPlayfield for it to become visable.
  * 
  * pf - which playfield to setup
  * size - the width and height of the playfield
@@ -88,11 +103,27 @@ int allocBitmapPlayfield(Playfield pf, RectSize size, ColorMode colors);
 int allocTiledPlayfield(Playfield pf, RectSize size, ColorMode colors);
 
 /**
+ * Get the graphics buffer for a playfield.  This allows you to use the playfield 
+ * a part of blitter operations.  
+ */
+GfxBufferState *getPlayfieldGfxBuffer(Playfield pf);
+
+/**
  * free the VRAM allocated to a playfield and disable it from displaying.
  * 
  * pf - which playfield to free
  */
 int freePlayfield(Playfield pf);
+
+/**
+ * show the playfield on the display
+ */
+int showPlayfield(Playfield pf);
+
+/**
+ * hide the playfield on the display
+ */
+int hidePlayfield(Playfield pf);
 
 /**
  * Write data to the VRAM for a playfield.  Writes will be truncated at the end of the playfield buffer.
@@ -113,6 +144,9 @@ int bitmapWrite(Playfield pf, uint16_t *buffer, uint16_t size, uint16_t dest_off
  * dest_offset - the word offset into the playfield buffer (16bit word)
  */
 int paletteWrite(Playfield pf, uint16_t *buffer, uint16_t size, uint16_t dest_offset );
+
+
+int copyBlit(GfxBufferState dest, Rect dest_rect, GfxBufferState src, Rect src_rect);
 
 
 void wait_vsync();

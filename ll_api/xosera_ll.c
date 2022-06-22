@@ -1,8 +1,11 @@
 #include <stdio.h>
 #include "xosera_ll.h"
 
+#define GFX_BUFFERS_MAX 32
+
 GlobalState gState;
 LayerState  gLayers[2];
+GfxBufferState gGfxBuffers[GFX_BUFFERS_MAX];
 
 typedef struct free_mem {
     uint16_t start;
@@ -35,6 +38,11 @@ int initGraphics(GlobalMode gm)
     }
     vram_free_list[0].start = 0;
     vram_free_list[0].len = VRAM_MAX_SIZE;
+
+    for ( i = 0; i < GFX_BUFFERS_MAX; i++)
+    {
+        gGfxBuffers[i].mAllocated = false;
+    }
 
     switch(gm)
     {
@@ -96,10 +104,65 @@ static LayerState *get_layer(Playfield pf)
 }
 
 
+GfxBufferState *allocBitmapBuffer(RectSize size, ColorMode colors)
+{
+    int line_words = 0;
+    uint16_t reg_bpp = 0;
+    GfxBufferState *gfx_buf = NULL;
+    int i;
+
+    for ( i = 0; i < GFX_BUFFERS_MAX; i++)
+    {
+        if ( !gGfxBuffers[i].mAllocated )
+        {
+            gGfxBuffers[i].mAllocated = true;
+            gfx_buf = &gGfxBuffers[i];
+            break;
+        }
+    }
+
+    if ( gfx_buf == NULL )
+    {
+        return NULL;
+    }
+    
+    uint16_t base_offset;
+    if ( alloc_vram(line_words * size.height, &base_offset) != XERR_NoError )
+    {
+        gGfxBuffers[i].mAllocated = false;
+        return NULL;
+    }
+
+    gfx_buf->mBaseAddress = base_offset;
+    gfx_buf->mColorMode = colors;
+    gfx_buf->mSize.width = size.width;
+    gfx_buf->mSize.height = size.height;
+
+    switch(colors)
+    {
+        case COLOR_1BPP:
+            gfx_buf->mLineWords = (size.width + 15) / 16;
+            break;
+        case COLOR_4BPP:
+            gfx_buf->mLineWords = (size.width + 3) / 4;
+            break;
+        case COLOR_8BPP:
+            gfx_buf->mLineWords = (size.width + 1) / 2;
+            break;
+    }
+
+    gfx_buf->mBufferSize = gfx_buf->mLineWords * size.height;
+
+    return gfx_buf;    
+}
+
+
 #define GFX_CTRL_BITMAP 0x0040
 #define GFX_CTRL_TILED 0x0000
 #define GFX_CTRL_DISABLED 0x0080
 #define GFX_CTRL_ENABLED 0x0000
+#define GFX_CTRL_ENABLE_MASK 0x0080
+
 
 
 /**
@@ -117,15 +180,12 @@ int allocBitmapPlayfield(Playfield pf, RectSize size, ColorMode colors)
     switch(colors)
     {
         case COLOR_1BPP:
-            line_words = (size.width + 16) / 16;
             reg_bpp = 0;
             break;
         case COLOR_4BPP:
-            line_words = (size.width + 4) / 4;
             reg_bpp = 1;
             break;
         case COLOR_8BPP:
-            line_words = (size.width + 2) / 2;
             reg_bpp = 2;
             break;
     }
@@ -140,36 +200,34 @@ int allocBitmapPlayfield(Playfield pf, RectSize size, ColorMode colors)
         
     uint16_t scale = (h_factor - 1) << 2 | (v_factor - 1);
 
-    uint16_t base_offset;
-    if ( alloc_vram(line_words * size.height, &base_offset) != XERR_NoError )
+    GfxBufferState *gfx_buf = allocBitmapBuffer(size, colors);
+
+    if ( gfx_buf == NULL )
     {
         return XERR_NoMemory;
     }
 
-    if (pf == PF_A)
-    {
-        xreg_setw(PA_DISP_ADDR, base_offset);
-        xreg_setw(PA_LINE_LEN, line_words);
-        xreg_setw(PA_GFX_CTRL, GFX_CTRL_ENABLED | GFX_CTRL_BITMAP | reg_bpp << 4 | scale);
-    }
-    else
-    {
-        xreg_setw(PB_DISP_ADDR, base_offset);
-        xreg_setw(PB_LINE_LEN, line_words);
-        xreg_setw(PB_GFX_CTRL, GFX_CTRL_ENABLED | GFX_CTRL_BITMAP | reg_bpp << 4 | scale);
-    }
-
     LayerState *layer = get_layer(pf);
-    layer->mBaseAddress = base_offset;
-    layer->mBufferSize = line_words * size.height;
-    layer->mColorMode = colors;
+    layer->mCtrlReg = GFX_CTRL_DISABLED | GFX_CTRL_BITMAP | reg_bpp << 4 | scale;
+    layer->mGfxState = gfx_buf;
     layer->mColorBase = 0;
-    layer->mEnabled = 1;
+    layer->mEnabled = 0;
     layer->mHorizontalRepeat = h_factor - 1;
     layer->mVerticalRepeat = v_factor - 1;
     layer->mTiled = false;
-    layer->mSize.width = size.width;
-    layer->mSize.height = size.height;
+
+    if (pf == PF_A)
+    {
+        xreg_setw(PA_DISP_ADDR, gfx_buf->mBaseAddress);
+        xreg_setw(PA_LINE_LEN, gfx_buf->mLineWords);
+        xreg_setw(PA_GFX_CTRL, layer->mCtrlReg);
+    }
+    else
+    {
+        xreg_setw(PB_DISP_ADDR, gfx_buf->mBaseAddress);
+        xreg_setw(PB_LINE_LEN, gfx_buf->mLineWords);
+        xreg_setw(PB_GFX_CTRL, layer->mCtrlReg);
+    }
     
     return XERR_NoError;
 }
@@ -190,9 +248,41 @@ int allocTiledPlayfield(Playfield pf, RectSize size, ColorMode colors)
 int freePlayfield(Playfield pf)
 {
     LayerState *layer = get_layer(pf);
-    free_vram(layer->mBaseAddress, layer->mBufferSize);
+    free_vram(layer->mGfxState->mBaseAddress, layer->mGfxState->mBufferSize);
     layer->mEnabled = false;
     xreg_setw(PA_GFX_CTRL, GFX_CTRL_DISABLED);
+    return XERR_NoError;
+}
+
+int showPlayfield(Playfield pf)
+{
+    LayerState *layer = get_layer(pf);
+    layer->mCtrlReg &= ~GFX_CTRL_ENABLE_MASK;
+    layer->mCtrlReg |= GFX_CTRL_ENABLED;
+    if (pf == PF_A)
+    {
+        xreg_setw(PA_GFX_CTRL, layer->mCtrlReg);
+    }
+    else
+    {
+        xreg_setw(PB_GFX_CTRL, layer->mCtrlReg);
+    }
+    return XERR_NoError;
+}
+
+int hidePlayfield(Playfield pf)
+{
+    LayerState *layer = get_layer(pf);
+    layer->mCtrlReg &= ~GFX_CTRL_ENABLE_MASK;
+    layer->mCtrlReg |= GFX_CTRL_DISABLED;
+    if (pf == PF_A)
+    {
+        xreg_setw(PA_GFX_CTRL, layer->mCtrlReg);
+    }
+    else
+    {
+        xreg_setw(PB_GFX_CTRL, layer->mCtrlReg);
+    }
     return XERR_NoError;
 }
 
@@ -208,7 +298,7 @@ int bitmapWrite(Playfield pf, uint16_t *buffer, uint16_t size, uint16_t dest_off
 {
     LayerState *layer = get_layer(pf);
     int cnt   = 0;
-    int vaddr = layer->mBaseAddress + dest_offset;
+    int vaddr = layer->mGfxState->mBaseAddress + dest_offset;
 
     xm_setw(WR_INCR, 0x0001);        // needed to be set
     xm_setw(WR_ADDR, vaddr);
@@ -233,7 +323,7 @@ int paletteWrite(Playfield pf, uint16_t *buffer, uint16_t size, uint16_t dest_of
 {
     LayerState *layer = get_layer(pf);
     int cnt   = 0;
-    int vaddr = layer->mBaseAddress + dest_offset;
+    int vaddr = layer->mGfxState->mBaseAddress + dest_offset;
 
     if ( pf == PF_A )
         xm_setw(XR_ADDR, XR_COLOR_A_ADDR + dest_offset);

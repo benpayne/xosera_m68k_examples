@@ -62,8 +62,8 @@ static bool load_sd_bitmap(Playfield pf, const char * filename)
         while ((cnt = fl_fread(mem_buffer, 1, 1024, file)) > 0)
         {
             dprintf(".");
-            bitmapWrite(pf, mem_buffer, cnt >> 1, offset >> 1);
-            offset += cnt;
+            bitmapWrite(pf, mem_buffer, cnt >> 1, offset);
+            offset += (cnt >> 1);
         }
 
         fl_fclose(file);
@@ -138,15 +138,40 @@ void run_test()
     allocBitmapPlayfield(PF_A, size, COLOR_8BPP);
     allocBitmapPlayfield(PF_B, size, COLOR_4BPP);
 
-    if (!load_sd_colors(PF_A, "/test.pal.raw") && !load_sd_bitmap(PF_A, "/test.raw"))
+    if (!load_sd_colors(PF_A, "/test.pal.raw"))
     {
+        dprintf("Failed to load test.pal.raw\n");
+        return;
+    }
+    if (!load_sd_bitmap(PF_A, "/test.raw"))
+    {
+        dprintf("Failed to load test.raw\n");
         return;
     }
 
-    if (!load_sd_colors(PF_B, "/atari_logo.pal.raw") && !load_sd_bitmap(PF_B, "/atari_logo.raw"))
+    showPlayfield(PF_A);
+    delay(100000);
+    showPlayfield(PF_B);
+
+    uint16_t ctrl = xreg_getw(PA_GFX_CTRL);
+    dprintf("Showing Playfield A %x\n", ctrl);
+
+    if (!load_sd_colors(PF_B, "/atari_logo.pal.raw"))
     {
+        dprintf("Failed to load atari_logo.pal.raw\n");
         return;
     }
+    if (!load_sd_bitmap(PF_B, "/atari_logo.raw"))
+    {
+        dprintf("Failed to load atari_logo.raw\n");
+        return;
+    }
+
+    ctrl = xreg_getw(PB_GFX_CTRL);
+    dprintf("Showing B before Playfield %x\n", ctrl);
+
+    ctrl = xreg_getw(PB_GFX_CTRL);
+    dprintf("Showing Playfield B %x\n", ctrl);
 
     while (!checkchar())
     {
