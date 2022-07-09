@@ -1,5 +1,8 @@
 /* Low Level API for Xosera HW */
 
+#ifndef __XOSERA_LL_H_
+#define __XOSERA_LL_H_
+
 #include "xosera_m68k_api.h"
 
 typedef enum XoseraLLErrorEnum {
@@ -133,7 +136,7 @@ int hidePlayfield(Playfield pf);
  * size - size of the data to write to the playfield
  * dest_offset - the word offset into the playfield buffer (16bit word)
  */
-int bitmapWrite(Playfield pf, uint16_t *buffer, uint16_t size, uint16_t dest_offset );
+int bitmapWrite(GfxBufferState *gfx, uint16_t *buffer, uint16_t size, uint16_t dest_offset );
 
 /**
  * Update the Palette memory for a playfield, each palette entry is one word (16 bits), 4 bits per component in the format of ARGB.  Up to 256 words per playfield.   Writes will be truncated at the end of the palette buffer.
@@ -146,7 +149,12 @@ int bitmapWrite(Playfield pf, uint16_t *buffer, uint16_t size, uint16_t dest_off
 int paletteWrite(Playfield pf, uint16_t *buffer, uint16_t size, uint16_t dest_offset );
 
 
-int copyBlit(GfxBufferState dest, Rect dest_rect, GfxBufferState src, Rect src_rect);
+int fillBlit(GfxBufferState *dest, Rect *dest_rect, uint8_t color);
+
+
+int copyBlit(GfxBufferState *dest, Position *dest_pos, GfxBufferState *src, Rect *src_rect);
 
 
 void wait_vsync();
+
+#endif // __XOSERA_LL_H_

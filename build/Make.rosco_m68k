@@ -1,0 +1,39 @@
+export CROSS_COMPILE=m68k-elf-
+
+ifndef ROSCO_M68K_DIR
+ROSCO_M68K_DIR=$(TOPDIR)/../rosco_m68k
+endif
+
+ifndef XOSERA_M68K_DIR
+XOSERA_M68K_DIR=$(TOPDIR)/../Xosera
+endif
+
+-include $(ROSCO_M68K_DIR)/user.mk
+
+M68K_CPU?=68010
+M68K_ARCH?=$(M68K_CPU)
+M68K_TUNE?=$(M68K_CPU)
+
+M68K_SYSINCDIR?=$(ROSCO_M68K_DIR)/code/software/libs/build/include
+M68K_SYSLIBDIR?=$(ROSCO_M68K_DIR)/code/software/libs/build/lib
+
+ifneq ($(ROSCO_M68K_HUGEROM),false)
+M68K_LDSCRIPT?=$(SYSLIBDIR)/ld/serial/hugerom_rosco_m68k_program.ld
+else
+M68K_LDSCRIPT?=$(SYSLIBDIR)/ld/serial/rosco_m68k_program.ld
+endif
+
+NO_SHLIBS=yes
+
+GCC_LIBS=$(shell $(CC) --print-search-dirs \
+ | grep libraries:\ = \
+ | sed 's/libraries: =/-L/g' \
+ | sed 's/:/m68000\/ -L/g')m68000/
+
+PLATFORM_CFLAGS = -ffreestanding -std=c11 -Wall -Wextra \
+    -ffunction-sections -fdata-sections -pedantic -I$(M68K_SYSINCDIR) \
+    -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter \
+    -I$(XOSERA_M68K_DIR)/xosera_m68k_api \
+    -mcpu=$(M68K_CPU) -march=$(M68K_ARCH) -mtune=$(M68K_TUNE)
+PLATFORM_LDFLAGS =-T $(M68K_LDSCRIPT) -L$(M68K_SYSLIBDIR) -nostdlib $(GCC_LIBS) -L$(M68K_SYSLIBDIR) \
+    -L$(XOSERA_M68K_DIR)/xosera_m68k_api -lxosera_m68k_api -lrosco_m68k -lgcc

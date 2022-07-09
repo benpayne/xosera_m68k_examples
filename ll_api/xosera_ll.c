@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "xosera_ll.h"
 #include "vram_alloc.h"
+#include "debug_print.h"
 
 #define GFX_BUFFERS_MAX 32
 
@@ -257,11 +258,10 @@ int hidePlayfield(Playfield pf)
  * size - size of the data to write to the playfield
  * dest_offset - the word offset into the playfield buffer (16bit word)
  */
-int bitmapWrite(Playfield pf, uint16_t *buffer, uint16_t size, uint16_t dest_offset )
+int bitmapWrite(GfxBufferState *gfx, uint16_t *buffer, uint16_t size, uint16_t dest_offset )
 {
-    LayerState *layer = get_layer(pf);
     int cnt   = 0;
-    int vaddr = layer->mGfxState->mBaseAddress + dest_offset;
+    int vaddr = gfx->mBaseAddress + dest_offset;
 
     xm_setw(WR_INCR, 0x0001);        // needed to be set
     xm_setw(WR_ADDR, vaddr);
@@ -298,6 +298,103 @@ int paletteWrite(Playfield pf, uint16_t *buffer, uint16_t size, uint16_t dest_of
     {
         xm_setw(XR_DATA, *maddr++);
     }
+    return XERR_NoError;
+}
+
+static uint16_t shift[4] = { 0xf000, 0x7801, 0x3C02, 0x1E03 };
+
+int fillBlit(GfxBufferState *dest, Rect *dest_rect, uint8_t color)
+{
+    uint16_t val = 0;
+    int px_per_word = 2;
+
+    switch(dest->mColorMode)
+    {
+        case COLOR_8BPP:
+            val = (color << 8) | color;
+            break;
+        case COLOR_4BPP:
+            color &= 0x0F;
+            val = (color << 12) | (color << 8) | (color << 4) | color;
+            px_per_word = 4;
+            break;
+
+        default:
+            break;
+    }
+
+    xreg_setw(BLIT_CTRL, 0x3);
+
+    xreg_setw(BLIT_MOD_A, 0);
+    xreg_setw(BLIT_SRC_A, val);
+
+    xreg_setw(BLIT_MOD_B, 0);
+    xreg_setw(BLIT_SRC_B, 0xFFFF);
+
+    xreg_setw(BLIT_MOD_C, 0);
+    xreg_setw(BLIT_VAL_C, 0);
+
+    xreg_setw(BLIT_SHIFT, shift[dest_rect->x & 3]);
+
+    int16_t offset = (dest->mSize.width - dest_rect->width) / px_per_word;
+    uint16_t start =  dest->mBaseAddress + (dest_rect->x + dest_rect->y * dest->mSize.width) / px_per_word;
+    xreg_setw(BLIT_MOD_D, offset - 1);
+    xreg_setw(BLIT_DST_D, start);
+
+    //dprintf("fill blit MOD_D %d, DST_D %d, buffer %d, lines %d, val %d\n", offset, start, dest->mBaseAddress, dest_rect->height, val);
+    xreg_setw(BLIT_LINES, dest_rect->height - 1);
+    xreg_setw(BLIT_WORDS, dest_rect->width / px_per_word );
+
+    // wait for blit to complete
+    while (xm_getw(SYS_CTRL) & (1<<SYS_CTRL_BLITBUSY_B))
+        ;
+    return XERR_NoError;
+}
+
+
+int copyBlit(GfxBufferState *dest, Position *dest_pos, GfxBufferState *src, Rect *src_rect)
+{
+    if ( src->mColorMode != dest->mColorMode )
+    {
+        return XERR_BadGraphicsMode;
+    }
+
+    int px_per_word = 2;
+    if ( src->mColorMode == COLOR_4BPP )
+        px_per_word = 4;
+
+    xreg_setw(BLIT_CTRL, 0x2);
+
+    int16_t offset = (src->mSize.width - src_rect->width) / px_per_word;
+    uint16_t start =  src->mBaseAddress + (src_rect->x + src_rect->y * src->mSize.width) / px_per_word;
+    xreg_setw(BLIT_MOD_A, offset - 1);
+    xreg_setw(BLIT_SRC_A, start);
+
+    xreg_setw(BLIT_MOD_B, 0);
+    xreg_setw(BLIT_SRC_B, 0xFFFF);
+
+    xreg_setw(BLIT_MOD_C, 0);
+    xreg_setw(BLIT_VAL_C, 0);
+
+    xreg_setw(BLIT_SHIFT, shift[dest_pos->x & 3]);
+
+    //dprintf("copy blit MOD_A %d, DST_A %d, ", offset, start);
+
+    offset = (dest->mSize.width - src_rect->width) / px_per_word;
+    start =  dest->mBaseAddress + (dest_pos->x + dest_pos->y * dest->mSize.width) / px_per_word;
+    xreg_setw(BLIT_MOD_D, offset - 1);
+    xreg_setw(BLIT_DST_D, start);
+
+    //dprintf("MOD_D %d, DST_D %d, ", offset, start);
+    //dprintf("Lines %d, Words %d\n", src_rect->height - 1, src_rect->width / px_per_word);
+
+    xreg_setw(BLIT_LINES, src_rect->height - 1);
+    xreg_setw(BLIT_WORDS, src_rect->width / px_per_word );
+
+    // wait for blit to complete
+    while (xm_getw(SYS_CTRL) & (1<<SYS_CTRL_BLITBUSY_B))
+        ;
+
     return XERR_NoError;
 }
 

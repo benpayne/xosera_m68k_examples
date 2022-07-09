@@ -1,0 +1,286 @@
+# -*-makefile-*-
+#
+
+SHELL = bash
+
+# TOPDIR is declared by the Makefile including this file.
+ifndef TOPDIR
+	TOPDIR = .
+endif
+
+ifndef ABS_TOPDIR
+	ABS_TOPDIR := $(shell cd $(TOPDIR) && pwd)
+endif
+
+ifeq ($(JH_QUIET),no)
+QUIET = 
+else
+
+# support cmake like VERBOSE flag
+ifeq ($(VERBOSE), $(filter $(VERBOSE),yes 1))
+QUIET =
+else
+QUIET = @
+endif
+
+endif
+
+
+# set JH_EXTRA_CFLAGS to add compiler flags via the make cmdline
+PLATFORM_CFLAGS += $(JH_EXTRA_CFLAGS)
+
+ifndef PLATFORM
+	PLATFORM = LinuxPC
+endif
+export PLATFORM
+
+DEFAULT_PLATFORMS = LinuxPC
+
+MAKEFILE_DEPS += Makefile \
+	$(TOPDIR)/build/Make.Defaults \
+	$(TOPDIR)/build/Make.Rules \
+	$(TOPDIR)/build/Make.$(PLATFORM) \
+	$(NULL)
+
+ifdef EXTRA_MAKE_INC
+	include $(TOPDIR)/$(EXTRA_MAKE_INC)
+	MAKEFILE_DEPS += $(TOPDIR)/$(EXTRA_MAKE_INC)
+endif
+
+# The platform-specific Makefiles include portability nightmares.
+# Some platforms, though, don't have one, so check for existence first
+PLATFORM_MAKEFILE = $(TOPDIR)/build/Make.$(PLATFORM)
+ifeq ($(PLATFORM_MAKEFILE),$(wildcard $(PLATFORM_MAKEFILE)))
+	include $(PLATFORM_MAKEFILE)
+	MAKEFILE_DEPS += $(PLATFORM_MAKEFILE)
+endif
+
+# KERNELDIR can be speficied on the command line or environment
+ifndef KERNELDIR
+	KERNELDIR = $(KERNELDIR_DEFAULT)
+endif
+
+# Buildling linux 2.6 kernel modules requires the kernel src tree
+KERNEL_BUILD_DIR ?= $(KERNELDIR)
+
+# The headers are taken from the kernel
+KERNINCDIR += $(KERNELDIR)/include
+INCDIRS += $(PLATFORM_INCDIRS)
+
+# We need the configuration file, for CONFIG_SMP and possibly other stuff
+# (especiall for RISC platforms, where CFLAGS depends on the exact
+# processor being used).
+ifeq ($(KERNELDIR)/.config,$(wildcard $(KERNELDIR)/.config))
+	include $(KERNELDIR)/.config
+else
+	MESSAGE := $(shell echo "WARNING: no .config file in $(KERNELDIR)")
+endif
+
+# This is useful if cross-compiling. Taken from kernel Makefile (CC changed)
+# NB: this uses the box's default CC for preprocessing.
+DEFAULT_AS      ?=$(CROSS_COMPILE)as
+DEFAULT_NASM    ?=nasm
+DEFAULT_LD      ?=$(CROSS_COMPILE)ld
+DEFAULT_CC      ?=$(CROSS_COMPILE)gcc
+DEFAULT_CPP     ?=$(CC) -E
+DEFAULT_CXX     ?=$(CROSS_COMPILE)g++
+DEFAULT_AR      ?=$(CROSS_COMPILE)ar
+DEFAULT_RANLIB  ?=$(CROSS_COMPILE)ranlib
+DEFAULT_NM      ?=$(CROSS_COMPILE)nm
+DEFAULT_STRIP   ?=$(CROSS_COMPILE)strip --strip-debug --remove-section=.comment --remove-section=.note --preserve-dates
+DEFAULT_OBJCOPY ?=$(CROSS_COMPILE)objcopy
+DEFAULT_OBJDUMP ?=$(CROSS_COMPILE)objdump
+PERL            ?= perl
+
+AS      =$(DEFAULT_AS)
+NASM    =$(DEFAULT_NASM)
+LD      =$(DEFAULT_LD)
+CC      =$(DEFAULT_CC)
+CPP     =$(DEFAULT_CPP)
+CXX     =$(DEFAULT_CXX)
+AR      =$(DEFAULT_AR)
+RANLIB  =$(DEFAULT_RANLIB)
+NM      =$(DEFAULT_NM)
+STRIP   =$(DEFAULT_STRIP)
+OBJCOPY =$(DEFAULT_OBJCOPY)
+OBJDUMP =$(DEFAULT_OBJDUMP)
+MAKEDEP =$(PERL) $(TOPDIR)/build/dep.pl
+JHINSTALL=$(TOPDIR)/build/jhinstall.sh
+CP      = cp -p
+
+# ARCH can be speficed on the comdline or env. too, and defaults to this arch
+# Unfortunately, we can't easily extract it from kernel configuration
+# (well, we could look athe asm- symlink... don't know if worth the effort)
+ifndef ARCH
+	ARCH := $(shell $(CC) -dumpmachine)
+endif
+
+# this is for usermode linux, not be testing in some time.
+ifdef CONFIG_USERMODE
+	KERNINCDIR	+= $(KERNELDIR)/arch/um/include $(KERNELDIR)/arch/um/kernel/tt/include
+	CFLAGS_KERNEL += $(CFLAGS_KERNEL_DEBUG) -U__i386__ -Ui386 -D__arch_um__ -DSUBARCH=\"i386\" -D_LARGEFILE64_SOURCE
+else
+	KERNINCDIR += $(GCC_INCLUDE_DIR)
+ifdef KERNEL_2_6
+	KERNINCDIR += $(KERNELDIR)/include/asm-mips/mach-mips $(KERNELDIR)/include/asm-mips/mach-generic
+endif
+	CFLAGS_KERNEL += $(CFLAGS_KERNEL_OPT) -fno-strict-aliasing
+endif
+
+# check if were doing a release build
+ifdef JH_BUILD_RELEASE
+JH_BUILD_TYPE=RELEASE
+else
+JH_BUILD_TYPE=DEBUG
+endif
+
+# Use the standard masterbuild variable names
+JH_DEBUG_CFLAG ?= -g
+JH_OPT_CFLAG ?= -O2
+JH_DEBUG_LDFLAG ?= -g
+JH_OPT_LDFLAG ?=
+
+# Kernel is always optimized and not built with debug.
+CFLAGS_KERNEL_DEBUG += $(JH_DEBUG_CFLAG)
+CFLAGS_KERNEL_OPT += $(JH_OPT_CFLAG)
+
+# Optimize & strip all program binaries for release builds
+# otherwise, build with debugging
+ifdef JH_BUILD_RELEASE
+CFLAGS_PROG += $(JH_OPT_CFLAG)
+LDFLAGS_PROG += $(JH_OPT_LDFLAG)
+else
+CFLAGS_PROG += $(JH_DEBUG_CFLAG)
+LDFLAGS_PROG += $(JH_DEBUG_LDFLAG)
+endif
+
+# CFLAGS: all assignments to CFLAGS are incremental, so you can specify
+# the initial flags on the command line or environment, if needed.
+
+CFLAGS_KERNEL	+=  -Wall -pipe -D__KERNEL__ -DMODULE -nostdinc
+CFLAGS_KERNEL	+= $(patsubst %, -I%, $(INCDIRS))
+CFLAGS_KERNEL	+= $(patsubst %, -I%, $(KERNINCDIR)) 
+HPATH 	= $(INCDIRS) $(if $(JH_BUILD_KERNEL),$(KERNINCDIR))
+
+CFLAGS_PROG += -Wall -pipe $(patsubst %,-I%, $(INCDIRS)) 
+CXXFLAGS += $(CFLAGS_PROG)
+#LDFLAGS_PROG += -lpthread -Wl,-rpath-link,$(DEFAULT_LIB_DIR)
+#LIB_DIRS += -L$(TOPDIR)/lib/$(BIN_ARCH)
+
+ifdef CONFIG_GLIBC
+	LDFLAGS_PROG += -lrt
+endif
+
+ifdef CONFIG_SMP
+	CFLAGS_KERNEL += -D__SMP__ -DSMP
+endif
+
+# Prepend modversions.h if we're running with versioning.
+ifdef CONFIG_MODVERSIONS
+	CFLAGS_KERNEL += -DMODVERSIONS -include $(KERNELDIR)/include/config/modversions.h
+endif
+
+# 2.6.18 requires this change since the configuration headers are generated differently
+CFLAGS_KERNEL += -include $(KERNELDIR)/include/linux/autoconf.h
+
+export HPATH
+
+#Install dir
+VERSIONFILE = $(INCLUDEDIR)/linux/version.h
+VERSION     = $(shell awk -F\" '/REL/ {print $$2}' $(VERSIONFILE))
+INSTALLDIR = /lib/modules/$(VERSION)/misc
+
+OBJECT_EXT	= .o
+
+export JH_VERSION_STRING=$(JH_BUILD_TYPE)
+
+PLATFORM_CFLAGS += \
+	-DJH_BUILD_TYPE=$(JH_BUILD_TYPE) \
+	-DJH_REVISION_STRING="\"$(JH_REVISION_STRING)\"" \
+	-DJH_VERSION_STRING="\"$(JH_VERSION_STRING)\"" \
+	$(NULL)
+
+ifdef JH_BUILD_RELEASE
+PLATFORM_CFLAGS += -DJH_BUILD_RELEASE
+else
+PLATFORM_CFLAGS += -DJH_BUILD_DEBUG
+PLATFORM_CFLAGS += -DJH_VERBOSE_LOGGING
+endif
+
+# if people specifically request verbose logging, even in a release
+# build, give it to them
+ifdef JH_VERBOSE_LOGGING
+PLATFORM_CFLAGS += -DJH_VERBOSE_LOGGING
+endif
+
+#
+# Get the list of sources for this target if we are 
+#  building one target.
+#
+BUILD_ONE_NAME_PREFIX=
+ifdef BUILD_ONE_MODULE
+  BUILD_ONE_NAME = $(BUILD_ONE_MODULE)
+else
+  ifdef BUILD_ONE_KERNLIB
+	BUILD_ONE_NAME = $(BUILD_ONE_KERNLIB)
+  else
+    ifdef BUILD_ONE_PROG
+	  BUILD_ONE_NAME = $(BUILD_ONE_PROG)
+    else
+      ifdef BUILD_ONE_LIB
+	    BUILD_ONE_NAME_PREFIX = lib
+	    BUILD_ONE_NAME = $(BUILD_ONE_LIB)
+      else
+		ifdef BUILD_ONE_SHLIB
+		  BUILD_ONE_NAME = $(BUILD_ONE_SHLIB)
+		endif
+      endif
+    endif
+  endif
+endif
+
+BUILD_ONE_SRCS = $(SRCS_$(BUILD_ONE_NAME))
+BUILD_ONE_TARGET = $(patsubst %, $(EXE_DIR)/$(BUILD_ONE_NAME_PREFIX)%, $(BUILD_ONE_NAME))
+BUILD_ONE_PLATFORMS = $(PLATFORMS_$(BUILD_ONE_NAME))
+
+cc_target = $(filter $(BUILD_ONE_NAME), $(CC_PROGS))
+#cxx_srcs = $(filter %.cpp, $(BUILD_ONE_SRCS))
+ifeq ($(cc_target),)
+	BUILD_ONE_CC=$(CXX)
+else
+	BUILD_ONE_CC=$(CC)
+endif
+
+ifndef BIN_ARCH
+	BIN_ARCH=$(ARCH)
+endif
+
+BIN_ARCH_DIR ?= $(BIN_ARCH)
+LIB_ARCH_DIR ?= $(BIN_ARCH)
+OBJ_ARCH ?= $(BIN_ARCH)_$(JH_BUILD_TYPE)
+
+INSTALL_ROOT_DIR?=$(TOPDIR)
+
+OBJ_DIR = .objs_$(OBJ_ARCH)_$(BUILD_ONE_NAME)
+EXE_DIR = .exes_$(OBJ_ARCH)
+MODULE_DIR = $(INSTALL_ROOT_DIR)/bin/modules/$(BIN_ARCH)/
+# this used to locate where we get libraries from when linking.  
+DEFAULT_BIN_DIR = $(TOPDIR)/bin/$(BIN_ARCH)/
+DEFAULT_LIB_DIR = $(TOPDIR)/lib/$(BIN_ARCH)/
+
+map = $(foreach a,$(2),$(call $(1),$(a)))
+
+target_bin_dir = $(INSTALL_ROOT_DIR)/$(shell if [ "x$(call get_variable,BIN,$(1))" = "x" ]; then echo -n "bin"; else echo -n "$(call get_variable,BIN,$(1))"; fi)/$(BIN_ARCH_DIR)
+target_lib_dir = $(INSTALL_ROOT_DIR)/$(shell if [ "x$(call get_variable,LIB,$(1))" = "x" ]; then echo -n "lib"; else echo -n "$(call get_variable,LIB,$(1))"; fi)/$(LIB_ARCH_DIR)
+target_get_platforms = $(shell if [ "x$(call get_variable,PLATFORMS,$(1))" = "x" ]; then echo -n "$(DEFAULT_PLATFORMS)"; else echo -n "$(call get_variable,PLATFORMS,$(1))"; fi)
+target_test_platform = $(shell if [ "x$(findstring $(PLATFORM),$(call target_get_platforms,$(1)))" = "x$(PLATFORM)" ]; then echo -n $(1); fi)
+get_variable = $(shell if [ "x$($(1)_$(2))" = "x" ]; then echo -n "$($(1))"; else echo -n "$($(1)_$(2))"; fi)
+dir_test = $(shell if [ -e $(1)/Makefile ]; then echo -n $(1); fi)
+
+PLATFORM_TARGET_PROGS = $(call map, target_test_platform, $(TARGET_PROGS)) 
+PLATFORM_TARGET_LIBS = $(call map, target_test_platform, $(TARGET_LIBS))
+PLATFORM_TARGET_SHLIBS = $(call map, target_test_platform, $(TARGET_SHLIBS))
+ifeq ($(JH_BUILD_KERNEL),yes)
+PLATFORM_TARGET_MODULES = $(call map, target_test_platform, $(TARGET_MODULES))
+PLATFORM_TARGET_KERNLIBS = $(call map, target_test_platform, $(TARGET_KERNLIBS))
+endif
