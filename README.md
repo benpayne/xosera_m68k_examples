@@ -13,6 +13,10 @@ Build insstruction for rosco_m68k can be found [here](https://github.com/rosco-m
 
 Building the Xosera API can be done by running `make m68k` at the top level of the Xosera repo.
 
+## Building this repo
+
+You can build this code by running make at the top level.
+
 Once you've built the code you will need to copy this to a sd card to run on the target system.  There are a number of image assets needed for the programs so best to use the make target `deploy` to help copy everything needed to the SD card.  You will need to set the `DEPLOY_PATH` to achieve this
 
 `DEPLOY_PATH - Location of your SD card on the local filesystem.`
