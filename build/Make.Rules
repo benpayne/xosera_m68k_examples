@@ -121,7 +121,7 @@ $(TARGET_PROGS) : dummy
 	@$(MAKE) BUILD_ONE_PROG=$@ CFLAGS="$(CFLAGS_PROG)" $@
 	@echo "Copying $@ to $(call target_bin_dir,$@)"
 	@mkdir -p $(call target_bin_dir,$@)
-	@$(CP) $(EXE_DIR)/$@ $(call target_bin_dir,$@)
+	@$(CP) $(EXE_DIR)/$@ $(call target_bin_dir,$@)/$@$(EXE_SUFFIX)
 ifdef JH_ENABLE_STRIP
 	$(QUIET) $(STRIP) --strip-unneeded $(call target_bin_dir,$@)/$@
 endif

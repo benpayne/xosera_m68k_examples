@@ -24,6 +24,7 @@ M68K_LDSCRIPT?=$(SYSLIBDIR)/ld/serial/rosco_m68k_program.ld
 endif
 
 NO_SHLIBS=yes
+EXE_SUFFIX=.bin
 
 GCC_LIBS=$(shell $(CC) --print-search-dirs \
  | grep libraries:\ = \

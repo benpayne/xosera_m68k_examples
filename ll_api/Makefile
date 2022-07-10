@@ -14,18 +14,22 @@ SRCS_ll_api_test = kmain.c ll_api_test.c
 LIBS_ll_api_test = ll_api
 
 INSTALL = images
-EXTRA_CLEAN = test.raw atari_logo.raw test.pal.raw atari_logo.pal.raw atari_icon.raw atari_icon.pal.raw
+IMAGE_ASSETS = test.raw atari_logo.raw test.pal.raw atari_logo.pal.raw atari_icon.raw atari_icon.pal.raw
+EXTRA_CLEAN = $(IMAGE_ASSETS)
 
 include $(TOPDIR)/build/Make.Defaults
 include $(TOPDIR)/build/Make.Rules
 
-images: test.raw atari_logo.raw atari_icon.raw
+images: $(IMAGE_ASSETS)
 
-test.raw : $(TOPDIR)/assets/bugatti-vision-gt.jpg 
+test.raw test.pal.raw : $(TOPDIR)/assets/bugatti-vision-gt.jpg 
 	python3 $(TOPDIR)/scripts/convert.py $< $(basename $@) -c 256
 
-atari_logo.raw : $(TOPDIR)/assets/art_033117_side01.png
+atari_logo.raw atari_logo.pal.raw : $(TOPDIR)/assets/art_033117_side01.png
 	python3 $(TOPDIR)/scripts/convert.py $< $(basename $@) -c 16
 
-atari_icon.raw : $(TOPDIR)/assets/art_033117_side01.png
+atari_icon.raw atari_icon.pal.raw : $(TOPDIR)/assets/art_033117_side01.png
 	python3 $(TOPDIR)/scripts/convert.py $< $(basename $@) -c 16 -x 160 -y 120
+
+copy_images:
+	echo $(IMAGE_ASSETS) $(DEPLOY_PATH)
