@@ -1,6 +1,6 @@
 TOPDIR = .
 
-SUBDIRS = layers ll_api
+SUBDIRS = layers ll_api examples
 
 PLATFORM=rosco_m68k
 export PLATFORM
