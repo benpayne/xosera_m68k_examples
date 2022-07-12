@@ -89,3 +89,15 @@ void run_test()
 
     dprintf("loop complete, resettting...\n");
 }
+
+
+void kmain() 
+{
+  //printf("Hello, world! 😃\r\n");
+
+  run_test();
+  // When this function returns, the machine will reboot.
+  //
+  // In a real program, you probably wouldn't return from 
+  // this function!
+}
